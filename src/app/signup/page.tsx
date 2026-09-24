@@ -1,0 +1,4 @@
+import Link from "next/link";
+import { Navigation } from "@/components/Navigation";
+import { SignupForm } from "@/components/SignupForm";
+export default async function Signup({ searchParams }: { searchParams: Promise<{error?:string}> }) { const {error}=await searchParams; return <main className="site-shell"><Navigation/><h1 className="page-title">Join the community</h1><p className="page-subtitle">Create an account and request verified player access. Everyone can browse; approved players can share live counts.</p>{error&&<div className="notice error" role="alert">{error.replaceAll("+"," ")}</div>}<div className="notice">Your profile screenshot is visible only to administrators and is deleted after your request is reviewed.</div><SignupForm/><p className="auth-switch">Already have an account? <Link href="/login">Log in</Link></p></main>; }
