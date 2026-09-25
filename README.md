@@ -1,81 +1,93 @@
 # maimai SoCal Queue Tracker
 
-A mobile-first community tracker for current maimai DX play and queue counts at Southern California Round1 locations. Anyone can browse; manually approved players can submit counts. Updates are append-only history records, and the home page shows the most recent report.
+A small community project for checking maimai DX queue conditions at Round1 locations around Southern California. Updates are crowdsourced, so they can change quickly.
+
+**Try the app:** [maimai SoCal Queue Tracker](https://maimai-socal-queue-tracker.vercel.app/)
+
+## What it does
+
+- Shows recent play and queue counts for eight SoCal Round1 locations: Burbank, Lakewood, Main Place, Puente Hills, Mission Viejo, Temecula, Moreno Valley, and Plaza Bonita.
+- Lets approved players submit updates after an admin reviews their maimai profile screenshot.
+- Includes admin tools for verification, approved-player account management, test status data, and status moderation.
+- Keeps status history while showing only eligible, fresh reports publicly.
 
 ## Stack
 
-- Next.js App Router, React, TypeScript
-- Tailwind CSS 4 (with a small amount of custom CSS)
-- Supabase Auth, PostgreSQL, Row Level Security, private Storage
-- Vercel deployment
-- Installable PWA manifest and lightweight service worker
+- Next.js App Router, React, and TypeScript
+- Tailwind CSS 4 with a small amount of custom CSS
+- Supabase Auth, PostgreSQL, Row Level Security, and private Storage
+- Vercel deployment and an installable PWA
 
-The browser uses only the public Supabase anon/publishable key. A server-only Supabase service-role key is required for username login lookup and admin account deletion; never put it in `NEXT_PUBLIC_*` or browser code. Login uses usernames, while Supabase Auth keeps a random internal email alias for newly registered accounts. The MVP intentionally has no maimai API, paid service, maps, analytics, or email vendor.
+The app uses username and password for sign-in. Supabase Auth still stores an internal email identifier; the normal app UI does not show it. The app has no maimai API, paid API, map service, analytics vendor, or email vendor.
 
-## Local setup
+## Run it locally
 
-1. Install Node.js 20.9 or newer.
-2. Copy `.env.example` to `.env.local` and fill in the Supabase project URL, anon/publishable key, and server-only service-role key.
-3. Install packages and start Next.js:
+You’ll need Node.js 20.9 or newer and a Supabase project of your own for development.
+
+1. Fork and clone the repository.
+2. Copy `.env.example` to `.env.local` and add your own Supabase project values. Keep the service-role key server-side and out of Git.
+3. Install dependencies and start the app:
 
    ```sh
    npm install
    npm run dev
    ```
 
-4. Open http://localhost:3000.
+4. Open [http://localhost:3000](http://localhost:3000).
 
-Without Supabase environment values, the site displays a connection friendly empty/error state; signup and writes are disabled.
+Without Supabase values, the app can show a connection/error state; sign-up and database writes will not work.
 
 ## Supabase setup
 
-1. Create a Supabase project on the Free plan. In Project Settings → API, copy the Project URL and anon/publishable key into `.env.local`; add the service-role key there for server-side username lookup and admin account deletion. Never prefix the service-role key with `NEXT_PUBLIC_`.
-2. Apply the migrations in timestamp order using the Supabase SQL Editor or the Supabase CLI linked to your project. For the existing hardened project, apply `supabase/migrations/202609240004_account_management.sql` after the security-hardening migration and then `supabase/migrations/202609250001_username_auth.sql`. Migration `004` adds normalized display-name uniqueness, preserves status history on account deletion, and keeps the curated public view available; the username migration safely backfills each existing username from its Auth email and aborts before changes if the live Auth/profile data is inconsistent. The hardening migration itself is not in this checkout's tracked migrations, so use the existing reviewed/applied hardening SQL when setting up a fresh database before applying `004`.
-3. The migration creates profiles, locations, verification requests, append-only status updates, RLS policies, a private screenshot bucket, an admin review function, and the seven initial Round1 locations. Location records can be added/edited in the Supabase Table Editor; set `active=false` to hide a location without deleting its history.
-4. In Authentication → Providers → Email, keep **Confirm email** turned off. New accounts use random, non-deliverable internal email aliases, so registration must create a session immediately; users cannot receive a confirmation message at those aliases. Self-service password reset is not available because users cannot access the internal aliases; password recovery must be handled by an administrator until a separate recovery mechanism is designed.
+Use a development Supabase project, not the production project. Set up the schema by applying every file in `supabase/migrations/` in timestamp order:
 
-### First administrator
+1. `202609240001_initial_schema.sql` — core tables, RLS, storage bucket, admin review RPC, and initial locations.
+2. `202609240002_correct_socal_locations.sql` — corrects the initial Round1 location set.
+3. `202609240003_security_integrity_hardening.sql` — restricts raw-table access and adds the original database-side integrity protections.
+4. `202609240004_account_management.sql` — normalized display-name uniqueness and account-deletion history handling.
+5. `202609240005_add_plaza_bonita_location.sql` — adds Plaza Bonita.
+6. `202609240006_status_update_test_data.sql` — adds protected test-status support.
+7. `202609240007_status_update_removal.sql` — adds admin-only soft removal and moderation history.
+8. `202609250001_username_auth.sql` — adds unique usernames and username-based authentication support.
 
-1. Sign up for the app and make sure the `profiles` row exists (`auth.users` insert creates it automatically).
-2. In Supabase SQL Editor, find your user UUID under Authentication → Users, then run (replace the UUID):
+The repository includes the hardening migration needed for a fresh database setup. Use the Supabase SQL Editor or Supabase CLI against your own development project.
 
-   ```sql
-   update public.profiles
-   set role = 'admin'
-   where id = '00000000-0000-0000-0000-000000000000';
-   ```
+In Supabase Authentication → Providers → Email, turn **Confirm email** off. New accounts use random internal email identifiers that users cannot receive mail at. Self-service password recovery is not available; an administrator handles account recovery for now.
 
-This uses the trusted Supabase SQL Editor and does not put an admin email or password in the source. Admin status and verification state cannot be changed through a normal user's profile update. Admins can then review pending screenshot requests and approved accounts at `/admin`.
+To make the first administrator, create an account in the app, find its UUID in Supabase Authentication → Users, then set its profile role from the SQL Editor:
+
+```sql
+update public.profiles
+set role = 'admin'
+where id = '00000000-0000-0000-0000-000000000000';
+```
+
+Replace the example UUID with the account’s UUID. Admin role and verification state cannot be changed through a normal user profile update.
 
 ## Security and privacy
 
-- Locations and public status counts are readable without login. The `public_status_updates` view exposes only counts, time, location, and display name.
-- Inserts into `status_updates` require the signed-in user to be approved and the inserted user ID to match their account. Counts are constrained to 0–99 in both UI and database.
-- Verification and role changes are protected by RLS and a database trigger. The security-definer review function checks the caller's admin role before changing either status.
-- Screenshot storage is private, capped at 4MB, and only the owner can upload to their UUID folder. Only admins can read or delete images. The admin UI creates a five-minute signed URL. After review, it attempts to delete the screenshot; database review remains saved if storage deletion fails. Admin account deletion removes that account's private Storage folder through the Storage API before deleting the Auth user.
-- Set `SUPABASE_SERVICE_ROLE_KEY` in `.env.local` and in Vercel's Production (and Preview, if used) environment. It is read only by a `server-only` module for the narrow admin account-deletion action. It is not sent to the browser. `.env.local` is ignored by Git.
-- Account deletion is limited server-side to a different, approved, non-admin player. The Supabase Auth user is deleted; their profile and verification request cascade away, status history remains with a null `user_id`, and the public view labels that reporter “Deleted player.”
+- Public queue data comes from the curated `public_status_updates` view. Public clients do not have direct read access to raw `status_updates` history.
+- Approved players can submit their own reports. Counts are constrained to 0–99.
+- Verification screenshots are stored privately. Owners can upload to their own folder; admins can review them. Screenshots are removed after review when cleanup succeeds.
+- Admin actions are checked server-side and by database authorization. Status moderation soft-removes a row; it does not erase its history.
+- Status history is retained, including after account deletion. A deleted reporter is shown as “Deleted player.”
+- Public status is fresh for less than six hours based on `created_at`.
+- The browser uses only the public Supabase publishable key. `SUPABASE_SERVICE_ROLE_KEY` is server-only, is used for privileged username/auth operations and account deletion, bypasses normal RLS, and must never be exposed through `NEXT_PUBLIC_*`, sent to the browser, or committed.
 
-## PWA and stale data
+See [SECURITY.md](SECURITY.md) for how to report a security issue privately.
 
-The manifest sets the app name, short name, theme, portrait preference, and standalone display mode; the included SVG icon is used for app identity. On iPhone, open the deployed site in Safari → Share → Add to Home Screen. This is a web app, not a native iOS app. The service worker caches the public home shell as a network fallback; authenticated pages are not cached.
+## PWA
 
-Status counts are treated as current for less than 6 hours from the update's `created_at` timestamp. At 6 hours or older, the card hides the old counts and shows the no-current-status state; the history record remains stored. For current reports, the page shows elapsed time and reporter.
+The app is installable and uses `public/maimai-queue-tracker-logo.png` as its app icon. On iPhone, open the site in Safari, tap **Share**, then **Add to Home Screen**. It remains a web app, not a native iOS app. Authenticated pages are not cached; the service worker can use the public home shell as an offline fallback.
 
-## Deploy to Vercel
+## Checks
 
-1. Push the project to a Git provider, then import it in Vercel. The Hobby plan can deploy the app using the provided `*.vercel.app` URL.
-2. Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in Vercel Project Settings → Environment Variables for Production (and Preview if desired).
-3. Deploy. Add `SUPABASE_SERVICE_ROLE_KEY` to Vercel's server environment for every environment where username login is enabled. Keep it out of `NEXT_PUBLIC_*`. Add the Vercel URL to Supabase Authentication → URL Configuration → Site URL and allowed redirect URLs if you later enable OAuth.
-4. Confirm the free-plan limits for your expected traffic and storage before launch; free tiers can change and may pause inactive projects.
+```sh
+npm run lint
+npm run typecheck
+npm run build
+```
 
-## Commands
+## Free-tier hosting
 
-- `npm run dev` — local development
-- `npm run lint` — ESLint
-- `npm run typecheck` — TypeScript checks
-- `npm run build` — production build
-
-## Free-tier notes
-
-Supabase and Vercel free tiers have quotas and policies that may change. Supabase Free projects have limited database/storage/egress and can be paused after inactivity; Vercel Hobby is aimed at personal/non-commercial use. This repo adds no paid APIs, custom domain, or paid hosting dependency. Image resizing is attempted in the browser; upload remains capped at 4MB. Screenshot cleanup runs after admin review, with failed deletes left for a later manual cleanup from Storage.
+The project can run on Supabase Free and Vercel Hobby without a paid API or custom domain. Free-tier quotas, policies, and eligibility can change, so check the providers’ current terms for your use.
