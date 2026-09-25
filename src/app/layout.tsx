@@ -6,6 +6,7 @@ export const metadata: Metadata = {
   title: "maimai SoCal Queue Tracker",
   description: "Community reported maimai DX status at Southern California Round1 locations.",
   applicationName: "maimai SoCal Queue Tracker",
+  icons: { apple: "/maimai-queue-tracker-logo.png" },
   appleWebApp: { capable: true, title: "maimai SoCal", statusBarStyle: "default" },
   manifest: "/manifest.json",
 };
