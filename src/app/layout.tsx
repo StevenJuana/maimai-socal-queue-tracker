@@ -1,6 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { RegisterSW } from "@/components/RegisterSW";
+import { Nunito } from "next/font/google";
+
+const nunito = Nunito({ subsets: ["latin"], variable: "--font-nunito" });
 
 export const metadata: Metadata = {
   title: "maimai SoCal Queue Tracker",
@@ -12,5 +15,5 @@ export const metadata: Metadata = {
 };
 export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#f6f5f2" };
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body>{children}<RegisterSW/></body></html>;
+  return <html lang="en"><body className={nunito.variable}>{children}<RegisterSW/></body></html>;
 }
