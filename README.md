@@ -10,7 +10,7 @@ A mobile-first community tracker for current maimai DX play and queue counts at 
 - Vercel deployment
 - Installable PWA manifest and lightweight service worker
 
-The app uses the public Supabase anon/publishable key only. Never put a service-role key in `NEXT_PUBLIC_*` or the browser. The MVP intentionally has no Maimai API, paid service, maps, analytics, or email vendor.
+The browser uses only the public Supabase anon/publishable key. A server-only Supabase service-role key is required for admin account deletion; never put it in `NEXT_PUBLIC_*` or browser code. The MVP intentionally has no maimai API, paid service, maps, analytics, or email vendor.
 
 ## Local setup
 
@@ -30,7 +30,7 @@ Without Supabase environment values, the site displays a connection friendly emp
 ## Supabase setup
 
 1. Create a Supabase project on the Free plan. In Project Settings → API, copy the Project URL and anon/publishable key into `.env.local`.
-2. Apply `supabase/migrations/202609240001_initial_schema.sql` using the Supabase SQL Editor (paste the full file), or with the Supabase CLI linked to your project: `supabase db push`.
+2. Apply the migrations in timestamp order using the Supabase SQL Editor or the Supabase CLI linked to your project. For the existing hardened project, apply `supabase/migrations/202609240004_account_management.sql` after the security-hardening migration. It adds normalized display-name uniqueness, preserves status history on account deletion, and keeps the curated public view available. The hardening migration itself is not in this checkout's tracked migrations, so use the existing reviewed/applied hardening SQL when setting up a fresh database before applying `004`.
 3. The migration creates profiles, locations, verification requests, append-only status updates, RLS policies, a private screenshot bucket, an admin review function, and the seven initial Round1 locations. Location records can be added/edited in the Supabase Table Editor; set `active=false` to hide a location without deleting its history.
 4. In Authentication → Providers → Email, turn off **Confirm email** for the simplest $0 onboarding flow. If enabled, users may need to confirm and then log in before submitting their screenshot from My account. Supabase's built-in email delivery has low limits and is not a production email service.
 
@@ -45,15 +45,16 @@ Without Supabase environment values, the site displays a connection friendly emp
    where id = '00000000-0000-0000-0000-000000000000';
    ```
 
-This uses the trusted Supabase SQL Editor and does not put an admin email or password in the source. Admin status and verification state cannot be changed through a normal user's profile update. Admins can then review pending screenshot requests at `/admin`.
+This uses the trusted Supabase SQL Editor and does not put an admin email or password in the source. Admin status and verification state cannot be changed through a normal user's profile update. Admins can then review pending screenshot requests and approved accounts at `/admin`.
 
 ## Security and privacy
 
 - Locations and public status counts are readable without login. The `public_status_updates` view exposes only counts, time, location, and display name.
 - Inserts into `status_updates` require the signed-in user to be approved and the inserted user ID to match their account. Counts are constrained to 0–99 in both UI and database.
 - Verification and role changes are protected by RLS and a database trigger. The security-definer review function checks the caller's admin role before changing either status.
-- Screenshot storage is private, capped at 4MB, and only the owner can upload to their UUID folder. Only admins can read or delete images. The admin UI creates a five-minute signed URL. After review, it attempts to delete the screenshot; database review remains saved if storage deletion fails.
-- The browser only receives the anon/publishable key. The service-role key is not used by this app.
+- Screenshot storage is private, capped at 4MB, and only the owner can upload to their UUID folder. Only admins can read or delete images. The admin UI creates a five-minute signed URL. After review, it attempts to delete the screenshot; database review remains saved if storage deletion fails. Admin account deletion removes that account's private Storage folder through the Storage API before deleting the Auth user.
+- Set `SUPABASE_SERVICE_ROLE_KEY` in `.env.local` and in Vercel's Production (and Preview, if used) environment. It is read only by a `server-only` module for the narrow admin account-deletion action. It is not sent to the browser. `.env.local` is ignored by Git.
+- Account deletion is limited server-side to a different, approved, non-admin player. The Supabase Auth user is deleted; their profile and verification request cascade away, status history remains with a null `user_id`, and the public view labels that reporter “Deleted player.”
 
 ## PWA and stale data
 

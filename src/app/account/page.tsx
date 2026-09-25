@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Image from "next/image";
 import { Navigation } from "@/components/Navigation";
 import { createClient } from "@/lib/supabase/server";
 import { submitVerificationAction } from "@/lib/actions";
@@ -38,7 +39,7 @@ export default async function Account({ searchParams }: { searchParams: Promise<
     {profileStatus !== "approved" && !hasPendingRequest && <section style={{ marginTop: 18 }}>
       <h2 style={{ fontSize: 17 }}>Player verification</h2>
       <form action={submitVerificationAction} className="form-stack">
-        <div className="field"><label htmlFor="screenshot">Maimai profile screenshot</label><input className="file-input" id="screenshot" name="screenshot" type="file" accept="image/jpeg,image/png,image/webp" required/><span className="muted" style={{ fontSize: 12 }}>Private to admins and removed after review. Max 4MB.</span></div>
+        <div className="field"><label htmlFor="screenshot">maimai profile screenshot</label><p className="muted upload-help">A screenshot is required for manual verification. You can find your maimai profile at <a className="profile-link" href="https://maimaidx-eng.com/" target="_blank" rel="noopener noreferrer">https://maimaidx-eng.com/</a>. An admin reviews it before you can submit queue/status updates. It is private to admins and removed after review.</p><input className="file-input" id="screenshot" name="screenshot" type="file" accept="image/jpeg,image/png,image/webp" required/><span className="muted upload-limit">JPEG, PNG, or WebP · Max 4MB</span><div className="screenshot-example"><strong>Example: maimai profile screenshot</strong><Image src="/maimai-profile-example.png" alt="Example maimai profile screenshot" width={425} height={131} /></div></div>
         <button className="primary-button">{profileStatus === "rejected" ? "Request another review" : "Submit verification request"}</button>
       </form>
     </section>}
