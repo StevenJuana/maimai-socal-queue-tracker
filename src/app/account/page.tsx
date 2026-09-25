@@ -11,7 +11,7 @@ export default async function Account({ searchParams }: { searchParams: Promise<
   if (!user) redirect("/login");
 
   const [{ data: profile }, pendingRequestResult] = await Promise.all([
-    supabase.from("profiles").select("display_name,verification_status").eq("id", user.id).maybeSingle(),
+    supabase.from("profiles").select("username,display_name,verification_status").eq("id", user.id).maybeSingle(),
     supabase.from("verification_requests").select("id").eq("user_id", user.id).eq("status", "pending").maybeSingle(),
   ]);
   const profileStatus = profile?.verification_status ?? "unknown";
@@ -21,7 +21,8 @@ export default async function Account({ searchParams }: { searchParams: Promise<
     {query.error && <div className="notice error">{query.error.replaceAll("+", " ")}</div>}
     {query.message && <div className="notice success">{query.message.replaceAll("+", " ")}</div>}
     <section className="panel">
-      <div className="eyebrow">{profile?.display_name || user.email}</div>
+      <div className="eyebrow">Username: {profile?.username || "Unavailable"}</div>
+      <div className="muted" style={{ fontSize: 12, marginTop: 5 }}>Public display name: {profile?.display_name || "Player"}</div>
       <div className="muted" style={{ fontSize: 12, marginTop: 9 }}>Profile verification status</div>
       <h2 style={{ margin: "4px 0 10px", textTransform: "capitalize" }}>{profileStatus}</h2>
       <p className="muted" style={{ lineHeight: 1.5, marginBottom: 0 }}>

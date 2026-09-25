@@ -25,6 +25,10 @@ export default async function Admin() {
           <strong>TEST DATA · Create test status</strong>
           <p className="muted" style={{ marginBottom: 0 }}>Submit a clearly marked test update to exercise the public location cards.</p>
         </Link>
+        <Link className="panel" href="/admin/status-moderation">
+          <strong>Status moderation</strong>
+          <p className="muted" style={{ marginBottom: 0 }}>Review recent status history and remove erroneous reports from public display.</p>
+        </Link>
       </div>
     </main>
   );

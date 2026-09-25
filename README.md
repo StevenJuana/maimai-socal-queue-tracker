@@ -10,12 +10,12 @@ A mobile-first community tracker for current maimai DX play and queue counts at 
 - Vercel deployment
 - Installable PWA manifest and lightweight service worker
 
-The browser uses only the public Supabase anon/publishable key. A server-only Supabase service-role key is required for admin account deletion; never put it in `NEXT_PUBLIC_*` or browser code. The MVP intentionally has no maimai API, paid service, maps, analytics, or email vendor.
+The browser uses only the public Supabase anon/publishable key. A server-only Supabase service-role key is required for username login lookup and admin account deletion; never put it in `NEXT_PUBLIC_*` or browser code. Login uses usernames, while Supabase Auth keeps a random internal email alias for newly registered accounts. The MVP intentionally has no maimai API, paid service, maps, analytics, or email vendor.
 
 ## Local setup
 
 1. Install Node.js 20.9 or newer.
-2. Copy `.env.example` to `.env.local` and fill in the Supabase project URL and anon/publishable key.
+2. Copy `.env.example` to `.env.local` and fill in the Supabase project URL, anon/publishable key, and server-only service-role key.
 3. Install packages and start Next.js:
 
    ```sh
@@ -29,10 +29,10 @@ Without Supabase environment values, the site displays a connection friendly emp
 
 ## Supabase setup
 
-1. Create a Supabase project on the Free plan. In Project Settings → API, copy the Project URL and anon/publishable key into `.env.local`.
-2. Apply the migrations in timestamp order using the Supabase SQL Editor or the Supabase CLI linked to your project. For the existing hardened project, apply `supabase/migrations/202609240004_account_management.sql` after the security-hardening migration. It adds normalized display-name uniqueness, preserves status history on account deletion, and keeps the curated public view available. The hardening migration itself is not in this checkout's tracked migrations, so use the existing reviewed/applied hardening SQL when setting up a fresh database before applying `004`.
+1. Create a Supabase project on the Free plan. In Project Settings → API, copy the Project URL and anon/publishable key into `.env.local`; add the service-role key there for server-side username lookup and admin account deletion. Never prefix the service-role key with `NEXT_PUBLIC_`.
+2. Apply the migrations in timestamp order using the Supabase SQL Editor or the Supabase CLI linked to your project. For the existing hardened project, apply `supabase/migrations/202609240004_account_management.sql` after the security-hardening migration and then `supabase/migrations/202609250001_username_auth.sql`. Migration `004` adds normalized display-name uniqueness, preserves status history on account deletion, and keeps the curated public view available; the username migration safely backfills each existing username from its Auth email and aborts before changes if the live Auth/profile data is inconsistent. The hardening migration itself is not in this checkout's tracked migrations, so use the existing reviewed/applied hardening SQL when setting up a fresh database before applying `004`.
 3. The migration creates profiles, locations, verification requests, append-only status updates, RLS policies, a private screenshot bucket, an admin review function, and the seven initial Round1 locations. Location records can be added/edited in the Supabase Table Editor; set `active=false` to hide a location without deleting its history.
-4. In Authentication → Providers → Email, turn off **Confirm email** for the simplest $0 onboarding flow. If enabled, users may need to confirm and then log in before submitting their screenshot from My account. Supabase's built-in email delivery has low limits and is not a production email service.
+4. In Authentication → Providers → Email, keep **Confirm email** turned off. New accounts use random, non-deliverable internal email aliases, so registration must create a session immediately; users cannot receive a confirmation message at those aliases. Self-service password reset is not available because users cannot access the internal aliases; password recovery must be handled by an administrator until a separate recovery mechanism is designed.
 
 ### First administrator
 
@@ -66,7 +66,7 @@ Status counts are treated as current for less than 6 hours from the update's `cr
 
 1. Push the project to a Git provider, then import it in Vercel. The Hobby plan can deploy the app using the provided `*.vercel.app` URL.
 2. Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in Vercel Project Settings → Environment Variables for Production (and Preview if desired).
-3. Deploy. Add the Vercel URL to Supabase Authentication → URL Configuration → Site URL and allowed redirect URLs if you later enable confirmation or OAuth.
+3. Deploy. Add `SUPABASE_SERVICE_ROLE_KEY` to Vercel's server environment for every environment where username login is enabled. Keep it out of `NEXT_PUBLIC_*`. Add the Vercel URL to Supabase Authentication → URL Configuration → Site URL and allowed redirect URLs if you later enable OAuth.
 4. Confirm the free-plan limits for your expected traffic and storage before launch; free tiers can change and may pause inactive projects.
 
 ## Commands

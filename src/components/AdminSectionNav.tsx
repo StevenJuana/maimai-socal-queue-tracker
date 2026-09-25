@@ -7,6 +7,7 @@ export function AdminSectionNav() {
       <Link className="small-link" href="/admin/verifications">Verification Requests</Link>
       <Link className="small-link" href="/admin/players">Approved Players</Link>
       <Link className="small-link" href="/admin/test-status">TEST DATA</Link>
+      <Link className="small-link" href="/admin/status-moderation">Status moderation</Link>
     </nav>
   );
 }

@@ -6,10 +6,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-function safeMessage(message: string) {
-  if (/already registered|already exists/i.test(message)) return "An account with that email already exists. Try logging in.";
-  if (/invalid login credentials/i.test(message)) return "That email and password do not match.";
-  return "Something went wrong. Please try again in a moment.";
+function safeLoginMessage() {
+  return "That username and password do not match.";
 }
 
 function logVerificationError(stage: string, error: unknown) {
@@ -64,31 +62,46 @@ async function removeUserScreenshots(admin: SupabaseClient, userId: string) {
 
 export async function loginAction(formData: FormData) {
   const supabase = await createClient(); if (!supabase) redirect("/login?error=setup");
-  const email = String(formData.get("email") ?? "").trim();
+  const username = normalizeDisplayNameInput(String(formData.get("username") ?? ""));
   const password = String(formData.get("password") ?? "");
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) redirect(`/login?error=${encodeURIComponent(safeMessage(error.message))}`);
+  if (!username || username.length > 255) redirect(`/login?error=${encodeURIComponent(safeLoginMessage())}`);
+  const admin = createAdminClient();
+  if (!admin) redirect("/login?error=setup");
+  const { data: userId, error: lookupError } = await admin.rpc("resolve_auth_user_id_for_username", { candidate_username: username });
+  if (lookupError || !userId) redirect(`/login?error=${encodeURIComponent(safeLoginMessage())}`);
+  const { data: { user: authUser }, error: authLookupError } = await admin.auth.admin.getUserById(userId);
+  if (authLookupError || !authUser?.email) redirect(`/login?error=${encodeURIComponent(safeLoginMessage())}`);
+  const { error } = await supabase.auth.signInWithPassword({ email: authUser.email, password });
+  if (error) redirect(`/login?error=${encodeURIComponent(safeLoginMessage())}`);
   revalidatePath("/", "layout"); redirect("/");
 }
 
 export async function signupAction(formData: FormData) {
   const supabase = await createClient(); if (!supabase) redirect("/signup?error=setup");
-  const email = String(formData.get("email") ?? "").trim();
+  const username = normalizeDisplayNameInput(String(formData.get("username") ?? ""));
   const password = String(formData.get("password") ?? "");
   const displayName = normalizeDisplayNameInput(String(formData.get("display_name") ?? "")).slice(0, 40);
   const screenshot = formData.get("screenshot");
-  if (!displayName || !(screenshot instanceof File) || !screenshot.size || screenshot.size > 4_000_000 || !screenshot.type.startsWith("image/")) {
-    redirect("/signup?error=Please+enter+a+display+name+and+upload+an+image+under+4MB.");
+  if (!username || username.length > 255 || !displayName || !(screenshot instanceof File) || !screenshot.size || screenshot.size > 4_000_000 || !screenshot.type.startsWith("image/")) {
+    redirect("/signup?error=Please+enter+a+username,+display+name,+password,+and+upload+an+image+under+4MB.");
   }
+  const admin = createAdminClient();
+  if (!admin) redirect("/signup?error=setup");
+  const { data: existingUsernameId, error: usernameLookupError } = await admin.rpc("resolve_auth_user_id_for_username", { candidate_username: username });
+  if (usernameLookupError) redirect("/signup?error=setup");
+  if (existingUsernameId) redirect("/signup?error=That+username+is+already+taken.+Choose+another.");
   if (await displayNameIsTaken(supabase, displayName)) {
     redirect("/signup?error=That+display+name+is+already+taken.+Choose+another.");
   }
-  const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { display_name: displayName } } });
+  const internalEmail = `${crypto.randomUUID()}@auth.maimai.invalid`;
+  const { data, error } = await supabase.auth.signUp({ email: internalEmail, password, options: { data: { username, display_name: displayName } } });
   if (error) {
+    const { data: claimedUsernameId } = await admin.rpc("resolve_auth_user_id_for_username", { candidate_username: username });
+    if (claimedUsernameId) redirect("/signup?error=That+username+is+already+taken.+Choose+another.");
     if (await displayNameIsTaken(supabase, displayName)) {
       redirect("/signup?error=That+display+name+is+already+taken.+Choose+another.");
     }
-    redirect(`/signup?error=${encodeURIComponent(safeMessage(error.message))}`);
+    redirect("/signup?error=Something+went+wrong.+Please+try+again+in+a+moment.");
   }
   if (!data.user) redirect("/signup?error=Could+not+create+your+account.");
   if (!data.session) redirect("/login?message=Account+created.+Log+in+to+send+your+verification+request.");
@@ -133,7 +146,7 @@ export async function submitStatusAction(formData: FormData) {
   const locationId = String(formData.get("location_id") ?? "");
   const playing = Number(formData.get("playing_count")); const queue = Number(formData.get("queue_count"));
   if (!Number.isInteger(playing) || !Number.isInteger(queue) || playing < 0 || queue < 0 || playing > 99 || queue > 99) redirect("/update?error=Counts+must+be+whole+numbers+from+0+to+99.");
-  const { error } = await supabase.from("status_updates").insert({ location_id: locationId, playing_count: playing, queue_count: queue, user_id: user.id, is_test: false });
+  const { error } = await supabase.from("status_updates").insert({ location_id: locationId, playing_count: playing, queue_count: queue, user_id: user.id, is_test: false, is_removed: false });
   if (error) redirect(`/update?location=${encodeURIComponent(locationId)}&error=${encodeURIComponent(/row-level security|permission/i.test(error.message) ? "Only approved players can submit updates." : "The update could not be saved. Please try again.")}`);
   revalidatePath("/"); redirect("/?message=Status+updated.");
 }
@@ -281,10 +294,34 @@ export async function createTestStatusAction(formData: FormData) {
     queue_count: queue,
     user_id: user.id,
     is_test: true,
+    is_removed: false,
   });
   if (error) redirect("/admin/test-status?error=Test+status+could+not+be+saved.");
 
   revalidatePath("/");
   revalidatePath("/admin/test-status");
   redirect("/admin/test-status?message=TEST+DATA+status+submitted.");
+}
+
+export async function removeStatusUpdateAction(statusId: string) {
+  const supabase = await createClient();
+  if (!supabase) redirect("/login");
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: isAdmin, error: adminCheckError } = await supabase.rpc("is_admin");
+  if (adminCheckError || !isAdmin) redirect("/admin/status-moderation?error=Only+admins+can+remove+status+updates.");
+
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(statusId)) {
+    redirect("/admin/status-moderation?error=That+status+update+could+not+be+identified.");
+  }
+
+  const { data: removed, error } = await supabase.rpc("admin_remove_status_update", { target_status_id: statusId });
+  if (error) redirect("/admin/status-moderation?error=The+status+could+not+be+removed.");
+  if (!removed) redirect("/admin/status-moderation?error=That+status+is+already+removed+or+no+longer+exists.");
+
+  revalidatePath("/");
+  revalidatePath("/admin/status-moderation");
+  redirect("/admin/status-moderation?message=Status+removed+from+public+display+and+future+statistics.");
 }
