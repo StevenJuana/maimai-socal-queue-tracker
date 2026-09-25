@@ -21,6 +21,10 @@ export default async function Admin() {
           <strong>Approved Players</strong>
           <p className="muted" style={{ marginBottom: 0 }}>View approved accounts and manage player accounts.</p>
         </Link>
+        <Link className="panel" href="/admin/test-status">
+          <strong>TEST DATA · Create test status</strong>
+          <p className="muted" style={{ marginBottom: 0 }}>Submit a clearly marked test update to exercise the public location cards.</p>
+        </Link>
       </div>
     </main>
   );

@@ -133,7 +133,7 @@ export async function submitStatusAction(formData: FormData) {
   const locationId = String(formData.get("location_id") ?? "");
   const playing = Number(formData.get("playing_count")); const queue = Number(formData.get("queue_count"));
   if (!Number.isInteger(playing) || !Number.isInteger(queue) || playing < 0 || queue < 0 || playing > 99 || queue > 99) redirect("/update?error=Counts+must+be+whole+numbers+from+0+to+99.");
-  const { error } = await supabase.from("status_updates").insert({ location_id: locationId, playing_count: playing, queue_count: queue, user_id: user.id });
+  const { error } = await supabase.from("status_updates").insert({ location_id: locationId, playing_count: playing, queue_count: queue, user_id: user.id, is_test: false });
   if (error) redirect(`/update?location=${encodeURIComponent(locationId)}&error=${encodeURIComponent(/row-level security|permission/i.test(error.message) ? "Only approved players can submit updates." : "The update could not be saved. Please try again.")}`);
   revalidatePath("/"); redirect("/?message=Status+updated.");
 }
@@ -243,4 +243,48 @@ export async function deleteApprovedPlayerAction(formData: FormData) {
   revalidatePath("/admin/players");
   revalidatePath("/");
   redirect("/admin/players?message=Player+account+deleted.+Their+status+history+is+preserved.");
+}
+
+export async function createTestStatusAction(formData: FormData) {
+  const supabase = await createClient();
+  if (!supabase) redirect("/login");
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: isAdmin, error: adminCheckError } = await supabase.rpc("is_admin");
+  if (adminCheckError || !isAdmin) redirect("/admin/test-status?error=Only+admins+can+create+test+data.");
+
+  const locationId = String(formData.get("location_id") ?? "");
+  const playingRaw = String(formData.get("playing_count") ?? "");
+  const queueRaw = String(formData.get("queue_count") ?? "");
+  const playing = Number(playingRaw);
+  const queue = Number(queueRaw);
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(locationId)
+    || !/^\d{1,2}$/.test(playingRaw) || !/^\d{1,2}$/.test(queueRaw)
+    || !Number.isInteger(playing) || !Number.isInteger(queue)
+    || playing < 0 || playing > 99 || queue < 0 || queue > 99
+  ) redirect("/admin/test-status?error=Choose+an+active+location+and+whole-number+counts+from+0+to+99.");
+
+  const { data: location, error: locationError } = await supabase
+    .from("locations")
+    .select("id")
+    .eq("id", locationId)
+    .eq("active", true)
+    .maybeSingle();
+  if (locationError || !location) redirect("/admin/test-status?error=Choose+an+active+location.");
+
+  const { error } = await supabase.from("status_updates").insert({
+    location_id: location.id,
+    playing_count: playing,
+    queue_count: queue,
+    user_id: user.id,
+    is_test: true,
+  });
+  if (error) redirect("/admin/test-status?error=Test+status+could+not+be+saved.");
+
+  revalidatePath("/");
+  revalidatePath("/admin/test-status");
+  redirect("/admin/test-status?message=TEST+DATA+status+submitted.");
 }
